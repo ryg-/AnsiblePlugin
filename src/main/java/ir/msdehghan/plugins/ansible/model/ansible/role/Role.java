@@ -5,7 +5,7 @@ import ir.msdehghan.plugins.ansible.model.yml.YamlTypes;
 import ir.msdehghan.plugins.ansible.model.yml.type.YamlMappingType;
 import ir.msdehghan.plugins.ansible.model.yml.type.YamlType;
 import ir.msdehghan.plugins.ansible.model.yml.type.api.ReferenceProvider;
-import ir.msdehghan.plugins.ansible.reference.RoleNameReference;
+import ir.msdehghan.plugins.ansible.reference.RoleTaskEntryReference;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.yaml.psi.YAMLMapping;
 import org.jetbrains.yaml.psi.YAMLScalar;
@@ -42,7 +42,7 @@ public class Role extends YamlMappingType implements ReferenceProvider {
         if (scalar.getParent() instanceof YAMLMapping) {
             return emptyList();
         }
-        return singleton(new RoleNameReference(scalar));
+        return singleton(new RoleTaskEntryReference(scalar));
     }
 
     static class RoleName extends YamlType implements ReferenceProvider {
@@ -54,7 +54,7 @@ public class Role extends YamlMappingType implements ReferenceProvider {
 
         @Override
         public @NotNull Collection<PsiReference> getReferences(YAMLScalar scalar) {
-            return singleton(new RoleNameReference(scalar));
+            return singleton(new RoleTaskEntryReference(scalar));
         }
     }
 }
