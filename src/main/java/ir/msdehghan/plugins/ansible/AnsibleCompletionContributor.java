@@ -18,15 +18,18 @@ public class AnsibleCompletionContributor extends CompletionContributor {
 
     private PsiElementPattern.Capture<PsiElement> completionPlace() {
         PsiElementPattern.Capture<PsiElement> updatedKey = PlatformPatterns.psiElement(YAMLTokenTypes.SCALAR_KEY);
+        PsiElementPattern.Capture<PsiElement> scalarValue = PlatformPatterns.psiElement()
+                .withElementType(TokenSet.create(YAMLElementTypes.SCALAR_PLAIN_VALUE,
+                        YAMLElementTypes.SCALAR_QUOTED_STRING));
         PsiElementPattern.Capture<PsiElement> inserted = PlatformPatterns.psiElement().withParent(
                 PlatformPatterns.psiElement().withElementType(
                         TokenSet.create(YAMLElementTypes.SCALAR_PLAIN_VALUE, YAMLElementTypes.SCALAR_QUOTED_STRING)
                 )
         );
-        return PlatformPatterns.psiElement().andOr(inserted, updatedKey).with(new PatternCondition<>("In Ansible") {
+        return PlatformPatterns.psiElement().andOr(inserted, scalarValue, updatedKey).with(new PatternCondition<>("In Ansible") {
             @Override
             public boolean accepts(@NotNull PsiElement psiElement, ProcessingContext context) {
-                return AnsibleUtil.isInAnsibleFile(psiElement);
+                return AnsibleUtil.isInAnsibleFile(psiElement) || AnsibleUtil.isMoleculeConfig(psiElement);
             }
         });
     }

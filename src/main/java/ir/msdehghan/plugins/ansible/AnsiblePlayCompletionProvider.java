@@ -9,11 +9,14 @@ import ir.msdehghan.plugins.ansible.model.yml.YamlModelProcessor.ElementSchemaIn
 import ir.msdehghan.plugins.ansible.model.yml.type.YamlType;
 import ir.msdehghan.plugins.ansible.model.yml.type.api.MappingType;
 import ir.msdehghan.plugins.ansible.model.yml.type.api.ValueProvider;
+import ir.msdehghan.plugins.ansible.model.yml.type.api.ProjectAwareValueProvider;
 import ir.msdehghan.plugins.ansible.model.yml.type.api.YamlField;
+import ir.msdehghan.plugins.ansible.model.ansible.task.AnsibleTask;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.yaml.psi.YAMLMapping;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -31,11 +34,15 @@ public class AnsiblePlayCompletionProvider extends CompletionProvider<Completion
         final YamlType type = schemaPosition.getType();
 
         if (type instanceof ValueProvider) {
-            result.addAllElements(((ValueProvider) type).getValueLookups());
+            ValueProvider provider = (ValueProvider) type;
+            result.addAllElements(provider instanceof ProjectAwareValueProvider projectAware
+                    ? projectAware.getValueLookups(element.getProject()) : provider.getValueLookups());
         }
         if (type instanceof MappingType) {
             Set<String> siblings = getMappingSiblings(element);
-            ((MappingType) type).getFields().stream().unordered()
+            List<YamlField> fields = type instanceof AnsibleTask task
+                    ? task.getFieldsForProject(element.getProject()) : ((MappingType) type).getFields();
+            fields.stream().unordered()
                     .filter(f -> !siblings.contains(f.getName()))
                     .map(YamlField::getLookupElement)
                     .forEach(result::addElement);
