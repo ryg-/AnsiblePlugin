@@ -8,13 +8,13 @@ repositories{
 
 dependencies {
     implementation(libs.jackson.databind)
+    testImplementation(libs.junit)
 }
 
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(providers.gradleProperty("javaVersion").get())
     }
-}
 
 
 /* Manual changes:

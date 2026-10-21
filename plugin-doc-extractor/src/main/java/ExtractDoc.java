@@ -1,214 +1,148 @@
 import api.AnsibleModuleDto;
 import api.AnsibleModuleDto.Field;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonSetter;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
-import java.util.HashMap;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
-public class ExtractDoc {
-    public static void main(String[] args) throws IOException {
-        ObjectMapper mapper = new JsonMapper();
-        Map<String, AnsibleModule> map = mapper.readValue(ExtractDoc.class.getResource("/plugins.json"),
-                new TypeReference<>() {
-                });
-        mapper.setSerializationInclusion(JsonInclude.Include.NON_EMPTY);
-        Files.createDirectories(Paths.get("./docs"));
-        for (AnsibleModuleDto value : map.values().stream().map(ExtractDoc::convert).toList()) {
-            Files.write(Paths.get("./docs", value.name + ".json"), mapper.writeValueAsBytes(value), StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+/** Generates optional documentation snapshots from the Ansible installation on this machine. */
+public final class ExtractDoc {
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private ExtractDoc() { }
+
+    public static void main(String[] args) throws IOException, InterruptedException {
+        String executable = args.length > 0 ? args[0] : "ansible-doc";
+        Path outputDirectory = args.length > 1 ? Path.of(args[1]) : Path.of("docs");
+        Map<String, String> modules = parseListing(run(executable, "-t", "module", "-l", "--json"));
+        Path normalizedOutputDirectory = outputDirectory.toAbsolutePath().normalize();
+        Files.createDirectories(normalizedOutputDirectory);
+        for (String fqcn : modules.keySet()) {
+            AnsibleModuleDto dto = convert(fqcn, run(executable, "-t", "module", "-j", fqcn));
+            Path output = outputPath(normalizedOutputDirectory, fqcn);
+            Files.createDirectories(output.getParent());
+            MAPPER.writerWithDefaultPrettyPrinter().writeValue(output.toFile(), dto);
         }
-
     }
 
-    public static AnsibleModuleDto convert(AnsibleModule m) {
-        AnsibleModuleDto moduleDto = new AnsibleModuleDto();
-        Doc doc = m.doc;
-
-        moduleDto.name = doc.module;
-        moduleDto.addedIn = doc.version_added;
-        moduleDto.category = doc.category;
-        moduleDto.description = doc.description;
-        moduleDto.shortDescription = doc.short_description;
-        moduleDto.notes = doc.notes;
-        moduleDto.requirements = doc.requirements;
-        moduleDto.returnFields = m.returnFields != null ? m.returnFields.keySet() : null;
-
-        if (doc.deprecated != null) {
-            moduleDto.deprecated = new AnsibleModuleDto.Deprecated();
-            moduleDto.deprecated.alternative = doc.deprecated.alternative;
-            moduleDto.deprecated.removedIn = doc.deprecated.removed_in;
-            moduleDto.deprecated.why = doc.deprecated.why;
+    static Path outputPath(Path outputDirectory, String fqcn) throws IOException {
+        if (fqcn == null || fqcn.isBlank() || fqcn.contains("/") || fqcn.contains("\\")) {
+            throw new IOException("Invalid module name in ansible-doc listing: " + fqcn);
         }
-
-        if (doc.options != null) {
-            moduleDto.fields = new HashMap<>(doc.options.size());
-            for (Map.Entry<String, Option> optionEntry : doc.options.entrySet()) {
-                Option option = optionEntry.getValue();
-                Field field = new Field();
-                field.aliases = option.aliases;
-                field.choices = option.choices;
-                field.defaultValue = option.defaultValue;
-                field.description = option.description;
-                field.elements = option.elements;
-                field.required = option.required;
-                field.type = option.type;
-                field.versionAdded = option.version_added;
-                moduleDto.fields.put(optionEntry.getKey(), field);
-            }
+        Path root = outputDirectory.toAbsolutePath().normalize();
+        Path output = root.resolve(fqcn + ".json").normalize();
+        if (!output.startsWith(root)) {
+            throw new IOException("Module output path escapes the output directory: " + fqcn);
         }
-        return moduleDto;
-    }
-}
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-class AnsibleModule {
-    public MetaData metadata;
-    public Doc doc;
-
-    @JsonProperty("return")
-    public Map<String, Object> returnFields;
-
-    @Override
-    public String toString() {
-        return "AnsibleModule{" +
-                "\nmetadata=" + metadata +
-                ",\n doc=" + doc +
-                ",\n returnFields=" + returnFields +
-                '}';
+        return output;
     }
 
-    public static String readDesc(Object o) {
-        if (o != null) {
-            String text;
-            if (o instanceof List) {
-                text = String.join(" ", (List<String>) o);
-            } else {
-                text = o.toString();
-            }
-            return text.replaceAll("\\s?[A-Z]\\((.+?)\\)", " '$1'");
+    static Map<String, String> parseListing(String json) throws IOException {
+        JsonNode root = MAPPER.readTree(json);
+        if (root == null || !root.isObject()) throw new IOException("ansible-doc listing must be a JSON object");
+        Map<String, String> modules = new LinkedHashMap<>();
+        root.fields().forEachRemaining(entry -> modules.put(entry.getKey(), text(entry.getValue())));
+        return modules;
+    }
+
+    static AnsibleModuleDto convert(String fqcn, String json) throws IOException {
+        JsonNode root = MAPPER.readTree(json);
+        if (root == null || !root.isObject() || !root.has(fqcn)) {
+            throw new IOException("ansible-doc detail did not contain module " + fqcn);
+        }
+        JsonNode module = root.get(fqcn);
+        JsonNode doc = module.path("doc");
+        if (!doc.isObject()) throw new IOException("ansible-doc detail has no doc object for " + fqcn);
+
+        AnsibleModuleDto dto = new AnsibleModuleDto();
+        dto.name = fqcn;
+        dto.category = text(doc.path("category"));
+        dto.addedIn = text(doc.path("version_added"));
+        dto.shortDescription = text(doc.path("short_description"));
+        dto.description = text(doc.path("description"));
+        dto.requirements = text(doc.path("requirements"));
+        dto.notes = text(doc.path("notes"));
+        dto.examples = text(doc.path("examples"));
+
+        JsonNode deprecated = doc.path("deprecated");
+        if (deprecated.isObject()) {
+            dto.deprecated = new AnsibleModuleDto.Deprecated();
+            dto.deprecated.alternative = text(deprecated.path("alternative"));
+            dto.deprecated.why = text(deprecated.path("why"));
+            dto.deprecated.removedIn = text(deprecated.path("removed_in"));
+        }
+
+        JsonNode returns = module.path("return");
+        if (returns.isObject()) {
+            dto.returnFields = new LinkedHashSet<>();
+            dto.returnDocs = new LinkedHashMap<>();
+            returns.fields().forEachRemaining(entry -> {
+                dto.returnFields.add(entry.getKey());
+                dto.returnDocs.put(entry.getKey(), text(entry.getValue().path("description")));
+            });
+        }
+
+        JsonNode options = doc.path("options");
+        if (options.isObject()) {
+            dto.fields = new LinkedHashMap<>();
+            options.fields().forEachRemaining(entry -> dto.fields.put(entry.getKey(), convertField(entry.getValue())));
+        }
+        return dto;
+    }
+
+    private static Field convertField(JsonNode option) {
+        Field field = new Field();
+        field.aliases = strings(option.path("aliases"));
+        field.choices = strings(option.path("choices"));
+        field.description = text(option.path("description"));
+        field.elements = text(option.path("elements"));
+        field.required = option.path("required").asBoolean(false);
+        field.type = text(option.path("type"));
+        field.versionAdded = text(option.path("version_added"));
+        JsonNode defaultValue = option.path("default");
+        field.defaultValue = defaultValue.isObject() ? defaultValue.toString() : text(defaultValue);
+        return field;
+    }
+
+    private static List<String> strings(JsonNode node) {
+        if (!node.isArray()) return List.of();
+        List<String> values = new ArrayList<>();
+        node.forEach(value -> { if (value.isTextual()) values.add(value.asText()); });
+        return values;
+    }
+
+    private static String text(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) return null;
+        if (node.isTextual() || node.isNumber() || node.isBoolean()) return node.asText();
+        if (node.isArray()) {
+            List<String> lines = new ArrayList<>();
+            node.forEach(value -> {
+                String line = text(value);
+                if (line != null && !line.isBlank()) lines.add(line);
+            });
+            return lines.isEmpty() ? null : String.join("\n", lines);
         }
         return null;
     }
 
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class MetaData {
-        public String status;
-        public String supported_by;
-
-        @JsonSetter("status")
-        public void setStatus(List<String> o) {
-            this.status = o.getFirst();
+    private static String run(String executable, String... arguments) throws IOException, InterruptedException {
+        List<String> command = new ArrayList<>();
+        command.add(executable);
+        command.addAll(List.of(arguments));
+        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+        String output;
+        try (var input = process.getInputStream()) {
+            output = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
         }
-
-        @Override
-        public String toString() {
-            return "MetaData{" +
-                    "status=" + status +
-                    ", supported_by=" + supported_by +
-                    '}';
-        }
-    }
-}
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-class Doc {
-    public String module;
-    public String version_added;
-    public String short_description;
-    public String filename;
-    public String category;
-    public String description;
-    public Deprecated deprecated;
-    public String requirements;
-    public String notes;
-    public Map<String, Option> options;
-
-    @JsonSetter("description")
-    public void setDescription(Object o) {
-        this.description = AnsibleModule.readDesc(o);
-    }
-
-    @JsonSetter("requirements")
-    public void setRequirements(Object o) {
-        this.requirements = AnsibleModule.readDesc(o);
-    }
-
-    @JsonSetter("notes")
-    public void setNotes(Object o) {
-        this.notes = AnsibleModule.readDesc(o);
-    }
-
-    @JsonSetter("filename")
-    public void setFilename(String filename) {
-        this.filename = filename;
-        category = filename.replaceFirst("^.*ansible/modules/(.*?)/[a-zA-z0-9]+\\.py$", "$1");
-    }
-
-    @Override
-    public String toString() {
-        return "Doc{" +
-                "module='" + module + '\'' +
-                ", versionAdded='" + version_added + '\'' +
-                ", shortDescription='" + short_description + '\'' +
-                ", filename='" + filename + '\'' +
-                ", description='" + description + '\'' +
-                ", deprecated=" + deprecated +
-                ", requirements=" + requirements +
-                ", notes=" + notes +
-                '}';
-    }
-
-    public static class Deprecated {
-        public String alternative;
-        public String why;
-        public String removed_in;
-
-        @Override
-        public String toString() {
-            return "Deprecated{" +
-                    "alternative='" + alternative + '\'' +
-                    ", why='" + why + '\'' +
-                    ", removed_in='" + removed_in + '\'' +
-                    '}';
-        }
-    }
-}
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-class Option {
-    public List<String> aliases;
-    public List<String> choices;
-    public String description;
-    public String elements;
-    public Boolean required;
-    public String type;
-    public String version_added;
-
-    @JsonProperty("default")
-    public String defaultValue;
-
-
-    @JsonSetter("default")
-    public void setNotes(JsonNode o) {
-        if (o != null) {
-            defaultValue = o.toString();
-        }
-    }
-
-    @JsonSetter("description")
-    public void setDescription(Object o) {
-        this.description = AnsibleModule.readDesc(o);
+        int exitCode = process.waitFor();
+        if (exitCode != 0) throw new IOException("Command failed (" + exitCode + "): " + String.join(" ", command) + "\n" + output);
+        return output;
     }
 }
