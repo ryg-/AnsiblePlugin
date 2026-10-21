@@ -7,6 +7,7 @@ import ir.msdehghan.plugins.ansible.model.yml.type.api.YamlField.Relation;
 import ir.msdehghan.plugins.ansible.model.yml.type.YamlType;
 import ir.msdehghan.plugins.ansible.model.yml.type.api.MappingType;
 import ir.msdehghan.plugins.ansible.model.yml.type.api.YamlField;
+import ir.msdehghan.plugins.ansible.model.ansible.task.AnsibleTask;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.yaml.YAMLTokenTypes;
 import org.jetbrains.yaml.psi.YAMLDocument;
@@ -39,7 +40,9 @@ public abstract class YamlModelProcessor {
             MappingType parentType = ObjectUtils.tryCast(parentField.getType(), MappingType.class);
 
             if (parentType == null) return null;
-            YamlField field = parentType.getFieldByName(keyValue.getKeyText()).orElse(null);
+            YamlField field = parentType instanceof AnsibleTask task
+                    ? task.getFieldForProject(element.getProject(), keyValue.getKeyText())
+                    : parentType.getFieldByName(keyValue.getKeyText()).orElse(null);
 
             Relation relation = YamlField.Relation.MAPPING;
             if (value instanceof YAMLSequence) relation = YamlField.Relation.SEQUENCE;

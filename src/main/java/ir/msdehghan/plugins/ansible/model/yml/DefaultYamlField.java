@@ -7,6 +7,9 @@ import com.intellij.lang.documentation.DocumentationMarkup;
 import ir.msdehghan.plugins.ansible.AnsibleUtil;
 import ir.msdehghan.plugins.ansible.model.yml.type.YamlType;
 import ir.msdehghan.plugins.ansible.model.yml.type.api.YamlField;
+import ir.msdehghan.plugins.ansible.model.yml.type.api.ValueProvider;
+import ir.msdehghan.plugins.ansible.model.yml.type.api.ProjectAwareValueProvider;
+import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.EnumMap;
@@ -116,6 +119,11 @@ public class DefaultYamlField implements YamlField {
 
     @Override
     public String generateDoc() {
+        return generateDoc(null);
+    }
+
+    @Override
+    public String generateDoc(Project project) {
         final String NEW_LINE = "<br/>";
         StringBuilder sb = new StringBuilder(DocumentationMarkup.CONTENT_START);
         if (description != null && !description.isEmpty()) {
@@ -132,6 +140,14 @@ public class DefaultYamlField implements YamlField {
                 .collect(Collectors.joining("/"));
 
         sb.append("Possible values: ").append(types).append(NEW_LINE);
+        if (defaultValueRelation == SCALAR && getDefaultType() instanceof ValueProvider provider) {
+            var lookups = provider instanceof ProjectAwareValueProvider projectAware && project != null
+                    ? projectAware.getValueLookups(project) : provider.getValueLookups();
+            if (!lookups.isEmpty()) {
+                sb.append("Choices: ").append(lookups.stream().map(com.intellij.codeInsight.lookup.LookupElement::getLookupString)
+                        .collect(Collectors.joining(", "))).append(NEW_LINE);
+            }
+        }
         return sb.append(DocumentationMarkup.CONTENT_END).toString();
     }
 
