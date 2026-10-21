@@ -45,6 +45,7 @@
     <depends>com.intellij.modules.json</depends>
 
     <extensions defaultExtensionNs="com.intellij">
+        <projectConfigurable parentId="tools" instance="ir.msdehghan.plugins.ansible.settings.AnsibleProjectConfigurable" id="ir.msdehghan.plugins.ansible.settings" displayName="Ansible" nonDefaultProject="true"/>
         <completion.contributor language="yaml" implementationClass="ir.msdehghan.plugins.ansible.AnsibleCompletionContributor"/>
         <psi.referenceContributor language="yaml" implementation="ir.msdehghan.plugins.ansible.reference.AnsibleReferenceContributor" />
         <lang.documentationProvider implementationClass="ir.msdehghan.plugins.ansible.AnsiblePlayDocProvider" language="yaml"/>

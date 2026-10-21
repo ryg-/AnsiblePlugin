@@ -2,7 +2,9 @@ import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
     java
+    jacoco
     alias(libs.plugins.intelliJPlatform)
+    alias(libs.plugins.sonarqube)
 }
 
 group = "ir.msdehghan"
@@ -53,4 +55,22 @@ intellijPlatform {
         // The unified 2026.x layout lists some jars that don't exist on disk; don't warn about each one.
         freeArgs = listOf("-missing-layout-classpath-file", "skip-silently")
     }
+}
+
+sonar {
+    properties {
+        property("sonar.projectKey", "MSDehghan_AnsiblePlugin")
+        property("sonar.organization", "msdehghan")
+        property("sonar.host.url", "https://sonarcloud.io")
+    }
+}
+
+tasks {
+    jacocoTestReport {
+        dependsOn(test)
+        reports {
+            xml.required.set(true)
+        }
+    }
+    sonar.get().dependsOn(jacocoTestReport)
 }
