@@ -23,7 +23,15 @@ jobs:
       uses: gradle/actions/setup-gradle@v6
 
     - name: Build with Gradle
-      run: ./gradlew build --info
+      run: ./gradlew build buildPlugin --info
 
     - name: Verify Plugin on IntelliJ Platforms
       run: ./gradlew verifyPlugin --info
+
+    - name: Upload plugin ZIP
+      uses: actions/upload-artifact@v7
+      with:
+        name: AnsiblePlugin-${{ github.sha }}
+        path: build/distributions/*.zip
+        if-no-files-found: error
+        retention-days: 14
