@@ -15,6 +15,7 @@ java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(providers.gradleProperty("javaVersion").get())
     }
+}
 
 
 /* Manual changes:
